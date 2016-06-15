@@ -1,0 +1,27 @@
+co_sched - preemptive multitasking in userspace based on a SIGALRM signal
+
+Description:
+    This is a small experiment, an application, which starts 3 sorting
+    routines, execution of each is preempted by SIGALRM signal, simulating
+    an OS timer interrupt.  Each routine is an execution context, which
+    can do a voluntary scheduling (calling schedule() directly) or be
+    preempted by a timer, and in that case nonvoluntary scheduling occurs.
+
+    The default time slice is 10ms, that means that each 10ms SIGALRM fires
+    and next context is scheduled by round robin algorithm.
+
+Usage:
+    [roman@pb co_sched]$ make
+    gcc  -O2 -Wall -o co_sched co_sched.c co_sched.S
+    [roman@pb co_sched]$ ./co_sched
+    ~~~~ let's rock!
+    [1] test_sort: begin init, a=0x7ffff5210010
+    [1] test_sort: start sort
+    [2] test_sort: begin init, a=0x7ffff05c4010
+    [2] test_sort: start sort
+    [3] test_sort: begin init, a=0x7fffeb978010
+    [3] test_sort: start sort
+    [2] test_sort: end
+    [3] test_sort: end
+    [1] test_sort: end
+    ~~~~ i am done
