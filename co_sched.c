@@ -180,6 +180,13 @@ union co_ptr {
 	int i[2];
 };
 
+static void local_irq_restore_trampoline(struct co_struct *co)
+{
+	assert(sigismember(&co->co_ctx.uc_sigmask, SIGALRM));
+	sigdelset(&co->co_ctx.uc_sigmask, SIGALRM);
+	local_irq_restore(&co->co_ctx.uc_sigmask);
+}
+
 __attribute__ ((noreturn))
 static void co_trampoline(int i0, int i1)
 {
@@ -188,6 +195,10 @@ static void co_trampoline(int i0, int i1)
 	};
 	struct co_struct *co = ptr.p;
 
+	/* We switch to trampoline with blocked timer.  That's safe.
+	 * So the first thing we have to do is to unblock timer signal.
+	 * Paired with co_add(). */
+	local_irq_restore_trampoline(co);
 	co->co_func(co->co_arg);
 	co->co_reapme = true;
 	schedule();
@@ -213,6 +224,11 @@ static void co_add(co_func *func, void *param)
 	ptr.p = co;
 	makecontext(&co->co_ctx, (void (*)(void))co_trampoline,
 		    2, ptr.i[0], ptr.i[1]);
+	/* Do not let trampoline be "naked" - when we switch to it
+	 * for the first time, timer signal must be blocked.
+	 * Paired with co_trampoline(). */
+	sigaddset(&co->co_ctx.uc_sigmask, SIGALRM);
+
 	preempt_disable();
 	list_add_tail(&co->co_list, &co_main.co_list);
 	preempt_enable();
