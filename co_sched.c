@@ -218,64 +218,22 @@ static void co_add(co_func *func, void *param)
 	preempt_enable();
 }
 
-extern void nonvoluntary_schedule(void);
-extern void nonvoluntary_schedule_end(void);
-
-struct frame {
-	unsigned long orig_sp;
-	unsigned long sigmask;
-	unsigned long orig_ip;
-};
-
 static void timer_handler(int signo, siginfo_t *info, ucontext_t *ctx)
 {
-	unsigned long sp;
-	struct frame *frame;
-
 #ifdef DEBUG
 	printf("@@@@ timer: ip=0x%llx, sp=0x%llx\n",
 	       ctx->uc_mcontext.gregs[REG_RIP],
 	       ctx->uc_mcontext.gregs[REG_RSP]);
 #endif
 
-	/* Prevent recursion */
-	if (ctx->uc_mcontext.gregs[REG_RIP] >=
-	    (unsigned long)nonvoluntary_schedule &&
-	    ctx->uc_mcontext.gregs[REG_RIP] <
-	    (unsigned long)nonvoluntary_schedule_end) {
-		return;
-	}
 	/* Do nothing. Preemption disabled */
 	if (preempt_count) {
 		return;
 	}
 
-	BUILD_BUG_ON(sizeof(ctx->uc_sigmask) < 8);
-
-	/*
-	 * Setup nonvoluntary_schedule frame:
-	 *   [interrupted sp]
-	 *   < -128 redzone > __
-	 *   [interrupted ip]   |
-	 *   [sigmask]          | schedule trampoline frame
-	 *   [new sp]         __|
-	 */
-	sp = ctx->uc_mcontext.gregs[REG_RSP] - 128;     /* redzone */
-	sp = sp - sizeof(struct frame);                 /* frame */
-	frame = (struct frame *)sp;
-	frame->orig_ip = ctx->uc_mcontext.gregs[REG_RIP];
-	frame->sigmask = ctx->uc_sigmask.__val[0];
-	frame->orig_sp = ctx->uc_mcontext.gregs[REG_RSP];
-	ctx->uc_mcontext.gregs[REG_RIP] = (unsigned long)nonvoluntary_schedule;
-	ctx->uc_mcontext.gregs[REG_RSP] = sp;
-
-	/*
-	 * Block timer while doing schedule stuff.  Unblock will happen at the
-	 * end of nonvoluntary_schedule, and probably then ALRM interrupt will
-	 * immediately happen, but timer_handler() has a check, that interrupt
-	 * will be ignored if nonvoluntary_schedule was interrupted.
-	 */
-	sigaddset(&ctx->uc_sigmask, SIGALRM);
+	/* We can schedule directly from sighandler, because kernel
+	 * cares only about proper sigreturn frame in the stack */
+	schedule();
 }
 
 static void timer_init(void)
